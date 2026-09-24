@@ -87,9 +87,9 @@ search_pattern(const char *input_buffer, const char *pattern,
 					res[pos] = '\0';
 					printf("%s\n", res);
 					free(res);
-					break;
 				} else if (pos != -1) {
-					printf("%s\n", input);
+					printf("%s\n",
+					    input); // print input and exit in
 					break;
 				}
 				if (*p == '\0')
