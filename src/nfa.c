@@ -63,7 +63,8 @@ handleInput(const char *input, struct NfaInfo *nfa, bool endAnchor)
 		int id	  = queue_pop(&q);
 		int state = id % V, pos = id / V;
 		if (state == nfa->accept && (!endAnchor || pos == len))
-			return pos; // returning accepting pos
+			return pos; // returning accepting width that is at what
+				    // width or circle of bfs we got answer
 		for (struct Node *e = nfa->g->adj[state]; e; e = e->next) {
 			int nid;
 			if (e->label.type == TOKEN_EPSILON)
