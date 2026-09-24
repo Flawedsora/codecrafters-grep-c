@@ -5,6 +5,6 @@
 
 #include "thompson.h"
 
-bool handleInput(const char *input, struct NfaInfo *nfa, bool endAnchor);
+int handleInput(const char *input, struct NfaInfo *nfa, bool endAnchor);
 
 #endif

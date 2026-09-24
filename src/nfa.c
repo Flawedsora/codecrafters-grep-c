@@ -45,7 +45,7 @@ labelMatches(const struct token *t, char c)
 	}
 }
 
-bool
+int
 handleInput(const char *input, struct NfaInfo *nfa, bool endAnchor)
 {
 	// first skip all epsilon closures
@@ -63,7 +63,7 @@ handleInput(const char *input, struct NfaInfo *nfa, bool endAnchor)
 		int id	  = queue_pop(&q);
 		int state = id % V, pos = id / V;
 		if (state == nfa->accept && (!endAnchor || pos == len))
-			return true;
+			return pos; // returning accepting pos
 		for (struct Node *e = nfa->g->adj[state]; e; e = e->next) {
 			int nid;
 			if (e->label.type == TOKEN_EPSILON)
@@ -77,5 +77,5 @@ handleInput(const char *input, struct NfaInfo *nfa, bool endAnchor)
 				vis[nid] = true, queue_push(&q, nid);
 		}
 	}
-	return false;
+	return -1;
 }

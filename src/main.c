@@ -3,9 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "nfa.h"
 
+const char *pattern;
 char **
 handleNewLine(const char *input_line)
 {
@@ -40,7 +42,8 @@ handleNewLine(const char *input_line)
 }
 
 bool
-search_pattern(const char *input_buffer, const char *pattern)
+search_pattern(const char *input_buffer, const char *pattern,
+    bool only_matching)
 {
 	struct token_list t   = returnTokens(pattern);
 	t		      = insertConcats(t);
@@ -53,17 +56,40 @@ search_pattern(const char *input_buffer, const char *pattern)
 		char *input = handle[i];
 		// each input is nwe line
 		if (pattern[0] == '^') {
-			if (handleInput(input, &nfa,
-				strchr(pattern, '$') != NULL)) {
-				printf("%s\n", input);
+			int pos = handleInput(input, &nfa,
+			    strchr(pattern, '$') != NULL);
+			if (pos != -1)
 				final = true;
+			if (only_matching && pos != -1) {
+				char *curr = input;
+				char *res  = malloc(pos + 1);
+				for (int j = 0; j < pos; ++j)
+					res[j] = curr[j];
+				res[pos] = '\0';
+				printf("%s\n", res);
+				free(res);
+			} else if (pos != -1) {
+				printf("%s\n", input);
 			}
 		} else {
 			for (const char *p = input;; ++p) {
-				if (handleInput(p, &nfa,
-					strchr(pattern, '$') != NULL)) {
-					printf("%s\n", input);
+				int pos = handleInput(p, &nfa,
+				    strchr(pattern, '$') != NULL);
+				if (pos != -1)
 					final = true;
+				if (only_matching && pos != -1) {
+					// -o flag to just get that slice which
+					// satisfies the pattern
+					char *curr = (char *)p;
+					char *res  = malloc(pos + 1);
+					for (int j = 0; j < pos; ++j)
+						res[j] = curr[j];
+					res[pos] = '\0';
+					printf("%s\n", res);
+					free(res);
+					break;
+				} else if (pos != -1) {
+					printf("%s\n", input);
 					break;
 				}
 				if (*p == '\0')
@@ -85,18 +111,24 @@ main(int argc, char *argv[])
 	// You can use print statements as follows for debugging, they'll be
 	// visible when running tests.
 	fprintf(stderr, "Logs from your program will appear here\n");
-
-	if (argc != 3) {
-		fprintf(stderr, "Expected two arguments\n");
-		return 1;
+	int	    opt;
+	bool	    only_matching = false;
+	const char *pattern;
+	// using getopt took reference from other implementation
+	// https://github.com/hlwqds/codecrafters-grep-c/blob/0d195d67f1258a5b9ab11d2f29ac2e9f2c1eef87/src/main.c
+	while ((opt = getopt(argc, argv, "oE:")) != -1) {
+		switch (opt) {
+		case 'o':
+			only_matching = true;
+			break;
+		case 'E':
+			pattern = optarg;
+			break;
+		default:
+			break;
+		}
 	}
-	const char *flag    = argv[1];
-	const char *pattern = argv[2];
 
-	if (strcmp(flag, "-E") != 0) {
-		fprintf(stderr, "Expected first argument to be '-E'\n");
-		return 1;
-	}
 	char   input_buffer[4096];
 	int    c;
 	size_t total = 0;
@@ -108,7 +140,7 @@ main(int argc, char *argv[])
 		return 1;
 	input_buffer[total] = '\0';
 	// Remove trailing newline
-	if (search_pattern(input_buffer, pattern)) {
+	if (search_pattern(input_buffer, pattern, only_matching)) {
 		return 0;
 	} else {
 		return 1;
