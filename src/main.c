@@ -20,24 +20,26 @@ emit_only_match(const char *p, int plen, bool show_color)
 
 bool
 search_pattern(const char *input_buffer, const char *pattern,
-    bool only_matching, bool showColory)
+    bool only_matching, bool showColory, bool isFileStream,
+    const char *filename)
 {
 	struct token_list t	   = returnTokens(pattern);
 	t			   = insertConcats(t);
 	t			   = convertIntoPost(t);
 	struct NfaInfo nfa	   = thompson(t);
-	// Hoisted anchor flags: same for every line/position.
 	bool	       startAnchor = (pattern[0] == '^');
 	bool	       endAnchor   = (strchr(pattern, '$') != NULL);
 	char	       bufferAns[1024];
 	int	       idx   = 0;
-	char	      *c     = input_buffer;
+	const char    *c     = input_buffer;
 	bool	       found = false;
 	if (startAnchor) {
 		int mlen = handleInput(c, &nfa, endAnchor);
 		if (mlen != -1) {
 			found = true;
 			if (only_matching) {
+				if (isFileStream)
+					printf("%s:", filename);
 				emit_only_match(c, mlen, showColory);
 				return true;
 			}
@@ -58,6 +60,8 @@ search_pattern(const char *input_buffer, const char *pattern,
 			while (*c != '\0')
 				bufferAns[idx++] = *c, c++;
 			bufferAns[idx] = '\0';
+			if (isFileStream)
+				printf("%s:", filename);
 			printf("%s\n", bufferAns);
 		}
 		return found;
@@ -67,6 +71,8 @@ search_pattern(const char *input_buffer, const char *pattern,
 		if (mlen != -1) {
 			found = true;
 			if (only_matching) {
+				if (isFileStream)
+					printf("%s:", filename);
 				emit_only_match(c, mlen, showColory);
 				c += mlen;
 				if (mlen == 0 && *c != '\0')
@@ -102,6 +108,8 @@ search_pattern(const char *input_buffer, const char *pattern,
 	}
 	if (!only_matching && found) {
 		bufferAns[idx] = '\0';
+		if (isFileStream)
+			printf("%s:", filename);
 		printf("%s\n", bufferAns);
 	}
 	return found;
@@ -162,31 +170,43 @@ main(int argc, char *argv[])
 	}
 	int   MAX_LEN = 4096;
 	char  input_buffer[MAX_LEN];
-	void *input_taker;
+	FILE *input_taker;
+	bool  isFileStream = false;
 	if (optind < argc) {
-		const char *filename = argv[optind];
-		FILE	   *file     = fopen(filename, "r");
-		if (file == NULL) {
-			fprintf(stderr, "CANNOT OPEN FILE.\n");
-			return 1;
+		bool matchingFound = false;
+		for (int i = optind; i < argc; ++i) {
+			isFileStream	     = true;
+			const char *filename = argv[i];
+			FILE	   *file     = fopen(filename, "r");
+			if (file == NULL) {
+				fprintf(stderr, "CANNOT OPEN CURRENT FILE.\n");
+				continue;
+			}
+			input_taker = file;
+			while (fgets(input_buffer, MAX_LEN, input_taker)) {
+				input_buffer[strcspn(input_buffer, "\n")] = 0;
+				if (optind + 1 == argc)
+					isFileStream =
+					    false; // if one file we just have
+						   // to check in that only
+				if (search_pattern(input_buffer, pattern,
+					only_matching, showColory, isFileStream,
+					filename))
+					matchingFound = true;
+			}
+			fclose(file);
 		}
-		input_taker = file;
-	} else
-		input_taker = stdin;
-	bool returnVal = false;
-	// no filename read stdin
-	while (fgets(input_buffer, MAX_LEN, input_taker)) {
-		input_buffer[strcspn(input_buffer, "\n")] = 0;
-		// pass this buffer directly to search_pattern fxn
-		fprintf(stderr, "Value of input buffer is: %s", input_buffer);
-		if (search_pattern(input_buffer, pattern, only_matching,
-			showColory))
-			returnVal = true;
-	}
-	// Remove trailing newline
-	if (returnVal) {
-		return 0;
+		return matchingFound ? 0 : 1;
 	} else {
-		return 1;
+		input_taker = stdin;
+		bool found  = false;
+		while (fgets(input_buffer, MAX_LEN, input_taker)) {
+			input_buffer[strcspn(input_buffer, "\n")] = 0;
+			if (search_pattern(input_buffer, pattern, only_matching,
+				showColory, isFileStream, NULL))
+				found = true;
+		}
+		return found ? 0 : 1;
 	}
+	return 1;
 }
