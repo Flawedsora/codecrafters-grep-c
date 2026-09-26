@@ -109,10 +109,11 @@ returnTokens(const char *pattern)
 			while (isdigit(*pattern) && *pattern != '}' &&
 			    *pattern != ',')
 				dig = dig * 10 + (*pattern - '0'), pattern += 1;
+			int ddig = dig;
 			dig--;
 			while (dig--)
 				list[list_idx++] = pok;
-			if (*pattern == ',') {
+			if (*pattern == ',' && *(pattern + 1) == '}') {
 				list[list_idx++] = pok;
 				// see actually eg: ca{2,t}t => caaa*t
 				// I caa has been handled above and now i just
@@ -129,6 +130,23 @@ returnTokens(const char *pattern)
 						   // borrowed from previous
 				pattern += 1;
 				list[list_idx++] = mok;
+			} else if (*pattern == ',' && *(pattern + 1) != '}') {
+        			// a{2,4} is a a a? a?
+        			// a{2,5} is a a a? a? a?
+				pattern += 1;
+				int ndig = 0;
+				while (isdigit(*pattern) && *pattern != '}')
+					ndig = ndig * 10 + (*pattern - '0'),
+					pattern += 1;
+				struct token rok = list[list_idx - 1];
+				ndig -= ddig;
+				while (ndig--) {
+					struct token cok;
+					cok.type	 = TOKEN_QUESTION;
+					cok.curr	 = ' ';
+					list[list_idx++] = pok;
+					list[list_idx++] = cok;
+				}
 			}
 			if (*pattern == '}')
 				pattern += 1;
