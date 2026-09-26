@@ -1,4 +1,6 @@
+#include <ctype.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,6 +101,18 @@ returnTokens(const char *pattern)
 			tok.curr = ' ';
 			pattern += 1;
 			list[list_idx++] = tok;
+		}
+		if (*pattern == '{') { // just extending previous approach
+			int	     dig = 0;
+			struct token pok = list[list_idx - 1];
+			pattern += 1;
+			while (isdigit(*pattern) && *pattern != '}')
+				dig = dig * 10 + (*pattern - '0'), pattern += 1;
+			dig--;
+			while (dig--)
+				list[list_idx++] = pok;
+			if (*pattern == '}')
+				pattern += 1;
 		}
 	}
 	return (struct token_list) { .tokens = list, .length = list_idx };
