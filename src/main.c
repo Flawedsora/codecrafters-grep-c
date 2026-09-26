@@ -1,118 +1,24 @@
+#include <sys/stat.h>
+
+#include <bits/getopt_core.h>
 #include <getopt.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "nfa.h"
+#include "dir.h"
+#include "handlefile.h"
+#include "search.h"
 
-static void
-emit_only_match(const char *p, int plen, bool show_color)
+static bool
+is_directory(const char *path)
 {
-	if (show_color) {
-		printf("\033[1;31m%.*s\033[0m\n", plen, p);
-	} else {
-		printf("%.*s\n", plen, p);
-	}
-}
-
-bool
-search_pattern(const char *input_buffer, const char *pattern,
-    bool only_matching, bool showColory, bool isFileStream,
-    const char *filename)
-{
-	struct token_list t	   = returnTokens(pattern);
-	t			   = insertConcats(t);
-	t			   = convertIntoPost(t);
-	struct NfaInfo nfa	   = thompson(t);
-	bool	       startAnchor = (pattern[0] == '^');
-	bool	       endAnchor   = (strchr(pattern, '$') != NULL);
-	char	       bufferAns[1024];
-	int	       idx   = 0;
-	const char    *c     = input_buffer;
-	bool	       found = false;
-	if (startAnchor) {
-		int mlen = handleInput(c, &nfa, endAnchor);
-		if (mlen != -1) {
-			found = true;
-			if (only_matching) {
-				if (isFileStream)
-					printf("%s:", filename);
-				emit_only_match(c, mlen, showColory);
-				return true;
-			}
-			const char *red	      = "\033[1;31m";
-			const char *reset     = "\033[0m";
-			size_t	    red_len   = strlen(red);
-			size_t	    reset_len = strlen(reset);
-			if (showColory) {
-				memcpy(bufferAns + idx, red, red_len);
-				idx += (int)red_len;
-			}
-			memcpy(bufferAns + idx, c, (size_t)mlen);
-			idx += mlen, c += mlen;
-			if (showColory) {
-				memcpy(bufferAns + idx, reset, reset_len);
-				idx += (int)reset_len;
-			}
-			while (*c != '\0')
-				bufferAns[idx++] = *c, c++;
-			bufferAns[idx] = '\0';
-			if (isFileStream)
-				printf("%s:", filename);
-			printf("%s\n", bufferAns);
-		}
-		return found;
-	}
-	while (*c != '\0') {
-		int mlen = handleInput(c, &nfa, endAnchor);
-		if (mlen != -1) {
-			found = true;
-			if (only_matching) {
-				if (isFileStream)
-					printf("%s:", filename);
-				emit_only_match(c, mlen, showColory);
-				c += mlen;
-				if (mlen == 0 && *c != '\0')
-					c += 1;
-				continue;
-			}
-			if (mlen == 0) {
-				if (*c != '\0') {
-					bufferAns[idx++] = *c;
-					c += 1;
-				}
-				continue;
-			}
-			const char *red	      = "\033[1;31m";
-			const char *reset     = "\033[0m";
-			size_t	    red_len   = strlen(red);
-			size_t	    reset_len = strlen(reset);
-			if (showColory) {
-				memcpy(bufferAns + idx, red, red_len);
-				idx += (int)red_len;
-			}
-			memcpy(bufferAns + idx, c, (size_t)mlen);
-			idx += mlen, c += mlen;
-			if (showColory) {
-				memcpy(bufferAns + idx, reset, reset_len);
-				idx += (int)reset_len;
-			}
-		} else {
-			if (!only_matching)
-				bufferAns[idx++] = *c;
-			c += 1;
-		}
-	}
-	if (!only_matching && found) {
-		bufferAns[idx] = '\0';
-		if (isFileStream)
-			printf("%s:", filename);
-		printf("%s\n", bufferAns);
-	}
-	return found;
+	struct stat st;
+	if (stat(path, &st) != 0)
+		return false;
+	return S_ISDIR(st.st_mode);
 }
 
 int
@@ -129,6 +35,7 @@ main(int argc, char *argv[])
 	bool		     only_matching = false;
 	const char	    *pattern;
 	char		    *color	    = NULL;
+	bool		     searchDirs	    = false;
 	// using getopt took reference from other implementation
 	// https://github.com/hlwqds/codecrafters-grep-c/blob/0d195d67f1258a5b9ab11d2f29ac2e9f2c1eef87/src/main.c
 	static struct option long_options[] = {
@@ -142,7 +49,7 @@ main(int argc, char *argv[])
 		// in opt
 	};
 	while (
-	    (opt = getopt_long(argc, argv, "oE:", long_options, NULL)) != -1) {
+	    (opt = getopt_long(argc, argv, "orE:", long_options, NULL)) != -1) {
 		// in this oE: o has no value & E needs value
 		// so opt is E and opt arg is coming after pattern
 		switch (opt) {
@@ -154,6 +61,9 @@ main(int argc, char *argv[])
 			break;
 		case 'c':
 			color = optarg;
+			break;
+		case 'r':
+			searchDirs = true;
 			break;
 		default:
 			break;
@@ -168,42 +78,32 @@ main(int argc, char *argv[])
 		else if (isatty(1))
 			showColory = true;
 	}
-	int   MAX_LEN = 4096;
-	char  input_buffer[MAX_LEN];
-	FILE *input_taker;
-	bool  isFileStream = false;
+	int  MAX_LEN = 4096;
+	char input_buffer[MAX_LEN];
 	if (optind < argc) {
 		bool matchingFound = false;
+		fprintf(stderr, "Val is %d\n", argc - optind);
+		bool show_prefix = (argc - optind > 1) || searchDirs;
 		for (int i = optind; i < argc; ++i) {
-			isFileStream	     = true;
-			const char *filename = argv[i];
-			FILE	   *file     = fopen(filename, "r");
-			if (file == NULL) {
-				fprintf(stderr, "CANNOT OPEN CURRENT FILE.\n");
+			// same logic as before, just moved:
+			// directory -> walk it, file -> search it
+			if (searchDirs && is_directory(argv[i])) {
+				if (scan_directory(argv[i], pattern,
+					only_matching, showColory, 0))
+					matchingFound = true;
 				continue;
 			}
-			input_taker = file;
-			while (fgets(input_buffer, MAX_LEN, input_taker)) {
-				input_buffer[strcspn(input_buffer, "\n")] = 0;
-				if (optind + 1 == argc)
-					isFileStream =
-					    false; // if one file we just have
-						   // to check in that only
-				if (search_pattern(input_buffer, pattern,
-					only_matching, showColory, isFileStream,
-					filename))
-					matchingFound = true;
-			}
-			fclose(file);
+			if (handle_file(argv[i], pattern, only_matching,
+				showColory, show_prefix))
+				matchingFound = true;
 		}
 		return matchingFound ? 0 : 1;
 	} else {
-		input_taker = stdin;
-		bool found  = false;
-		while (fgets(input_buffer, MAX_LEN, input_taker)) {
+		bool found = false;
+		while (fgets(input_buffer, MAX_LEN, stdin)) {
 			input_buffer[strcspn(input_buffer, "\n")] = 0;
 			if (search_pattern(input_buffer, pattern, only_matching,
-				showColory, isFileStream, NULL))
+				showColory, false, NULL))
 				found = true;
 		}
 		return found ? 0 : 1;
