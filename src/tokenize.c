@@ -106,11 +106,30 @@ returnTokens(const char *pattern)
 			int	     dig = 0;
 			struct token pok = list[list_idx - 1];
 			pattern += 1;
-			while (isdigit(*pattern) && *pattern != '}')
+			while (isdigit(*pattern) && *pattern != '}' &&
+			    *pattern != ',')
 				dig = dig * 10 + (*pattern - '0'), pattern += 1;
 			dig--;
 			while (dig--)
 				list[list_idx++] = pok;
+			if (*pattern == ',') {
+				list[list_idx++] = pok;
+				// see actually eg: ca{2,t}t => caaa*t
+				// I caa has been handled above and now i just
+				// need to handle a*
+				// we were adding one less previously because
+				// a{2} while going from left to right we took a
+				// if we considered 2 then it will be extra so
+				// we did dig-- but here we want one more time
+				// so
+				struct token mok = list[list_idx - 1];
+				mok.curr	 = ' ';
+				mok.type =
+				    TOKEN_PRODUCT; // everything else is
+						   // borrowed from previous
+				pattern += 1;
+				list[list_idx++] = mok;
+			}
 			if (*pattern == '}')
 				pattern += 1;
 		}
